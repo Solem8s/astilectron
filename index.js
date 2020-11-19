@@ -390,7 +390,7 @@ function windowCreate(json) {
     if (!json.windowOptions.webPreferences) {
         json.windowOptions.webPreferences = {}
     }
-    json.windowOptions.webPreferences.nodeIntegration = true
+    json.windowOptions.webPreferences.nodeIntegration = json.windowOptions.webPreferences.disableNodeIntegration !== true
     elements[json.targetID] = new BrowserWindow(json.windowOptions)
     if (typeof json.windowOptions.proxy !== "undefined") {
         elements[json.targetID].webContents.session.setProxy(json.windowOptions.proxy)
@@ -440,21 +440,22 @@ function windowCreateFinish(json) {
     elements[json.targetID].on('show', () => { client.write(json.targetID, consts.eventNames.windowEventShow) })
     elements[json.targetID].on('unmaximize', () => { client.write(json.targetID, consts.eventNames.windowEventUnmaximize) })
     elements[json.targetID].on('unresponsive', () => { client.write(json.targetID, consts.eventNames.windowEventUnresponsive) })
-    elements[json.targetID].webContents.on('did-finish-load', () => {
-        elements[json.targetID].webContents.executeJavaScript(
-            `const {ipcRenderer} = require('electron')
+    if (json.windowOptions.webPreferences.nodeIntegration) {
+        elements[json.targetID].webContents.on('did-finish-load', () => {
+            elements[json.targetID].webContents.executeJavaScript(
+                `const {ipcRenderer} = require('electron')
             var astilectron = {
                 onMessageOnce: false,
                 onMessage: function(callback) {
                     if (astilectron.onMessageOnce) {
                         return
                     }
-                    ipcRenderer.on('`+ consts.eventNames.ipcCmdMessage +`', function(event, message) {
+                    ipcRenderer.on('` + consts.eventNames.ipcCmdMessage + `', function(event, message) {
                         let v = callback(message.message)
                         if (typeof message.callbackId !== "undefined") {
-                            let e = {callbackId: message.callbackId, targetID: '`+ json.targetID +`'}
+                            let e = {callbackId: message.callbackId, targetID: '` + json.targetID + `'}
                             if (typeof v !== "undefined") e.message = v
-                            ipcRenderer.send('`+ consts.eventNames.ipcEventMessageCallback +`', e)
+                            ipcRenderer.send('` + consts.eventNames.ipcEventMessageCallback + `', e)
                         }
                     })
                     astilectron.onMessageOnce = true
@@ -462,7 +463,7 @@ function windowCreateFinish(json) {
                 callbacks: {},
                 counters: {},
                 registerCallback: function(k, e, c, n) {
-                    e.targetID = '`+ json.targetID +`';
+                    e.targetID = '` + json.targetID + `';
                     if (typeof c !== "undefined") {
                         if (typeof astilectron.counters[k] === "undefined") {
                             astilectron.counters[k] = 1;
@@ -481,21 +482,22 @@ function windowCreateFinish(json) {
                     }
                 },
                 sendMessage: function(message, callback) {
-                    astilectron.registerCallback('` + consts.callbackNames.webContentsMessage + `', {message: message}, callback, '`+ consts.eventNames.ipcEventMessage +`');
+                    astilectron.registerCallback('` + consts.callbackNames.webContentsMessage + `', {message: message}, callback, '` + consts.eventNames.ipcEventMessage + `');
                 }
             };
-            ipcRenderer.on('`+ consts.eventNames.ipcCmdMessageCallback +`', function(event, message) {
+            ipcRenderer.on('` + consts.eventNames.ipcCmdMessageCallback + `', function(event, message) {
                 astilectron.executeCallback('` + consts.callbackNames.webContentsMessage + `', message, [message.message]);
             });
-            ipcRenderer.on('`+ consts.eventNames.ipcCmdLog+`', function(event, message) {
+            ipcRenderer.on('` + consts.eventNames.ipcCmdLog + `', function(event, message) {
                 console.log(message)
             });
             ` + (typeof json.windowOptions.custom !== "undefined" && typeof json.windowOptions.custom.script !== "undefined" ? json.windowOptions.custom.script : "") + `
             document.dispatchEvent(new Event('astilectron-ready'))`
-        )
-        sessionCreate(elements[json.targetID].webContents, json.sessionId)
-        client.write(json.targetID, consts.eventNames.windowEventDidFinishLoad)
-    })
+            )
+            sessionCreate(elements[json.targetID].webContents, json.sessionId)
+            client.write(json.targetID, consts.eventNames.windowEventDidFinishLoad)
+        })
+    }
     elements[json.targetID].webContents.on('did-get-redirect-request', (event, oldUrl, newUrl) => {
         client.write(json.targetID, consts.eventNames.windowEventDidGetRedirectRequest, {
             newUrl: newUrl,
